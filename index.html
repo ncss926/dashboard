@@ -129,7 +129,7 @@
     </div>
     <div class="score-info">
       <div class="score-title">유동성 환경: <span id="scoreLabel" style="transition:color 1s">—</span></div>
-      <div class="score-sub">13개 지표 실시간 분석 · FRED API + Yahoo Finance + CNN</div>
+      <div class="score-sub">14개 지표 실시간 분석 · FRED API + Yahoo Finance + CNN</div>
       <div class="sbar-track"><div class="sbar-fill" id="sbarFill" style="width:50%"></div></div>
       <div class="sbar-labels"><span>긴축</span><span>중립</span><span>완화</span></div>
     </div>
@@ -162,6 +162,7 @@ const INDS = [
   {id:"tga",    label:"TGA 잔고",      sub:"Treasury Gen. Acct", unit:"십억$", src:"fred", series:"WTREGEN",      lim:5,  cat:"fed",       desc:"재무부 일반계정 · 감소 시 유동성 증가", dir:"down_bullish", scale: v=>v/1000},
   {id:"sofr",   label:"SOFR",         sub:"Secured Overnight",  unit:"%",    src:"fred", series:"SOFR",         lim:10, cat:"rates",     desc:"담보부 익일물 금리 · 단기자금 비용",    dir:"down_bullish", scale: v=>v},
   {id:"dxy",    label:"DXY",          sub:"Dollar Index (ICE)", unit:"",     src:"yahoo",ticker:"DX-Y.NYB",               cat:"fx",        desc:"달러 인덱스 · 글로벌 달러 강도",        dir:"down_bullish", scale: v=>v},
+  {id:"usdkrw", label:"달러/원 환율",  sub:"USD/KRW",            unit:"₩",    src:"yahoo",ticker:"KRW=X",                    cat:"fx",        desc:"달러 원화 환율 · 상승 시 원화 약세",    dir:"down_bullish", scale: v=>v},
   {id:"spread", label:"장단기 금리차", sub:"10Y − 2Y Spread",    unit:"%",    src:"fred", series:"T10Y2Y",       lim:30, cat:"rates",     desc:"수익률 곡선 기울기 · 경기 선행 지표",   dir:"up_bullish",   scale: v=>v},
   {id:"us2y",   label:"미국채 2년물",  sub:"2Y Treasury",        unit:"%",    src:"fred", series:"DGS2",         lim:30, cat:"rates",     desc:"2년물 국채 금리 · 단기 통화정책 기대",  dir:"down_bullish", scale: v=>v},
   {id:"us10y",  label:"미국채 10년물", sub:"10Y Treasury",       unit:"%",    src:"fred", series:"DGS10",        lim:30, cat:"rates",     desc:"10년물 국채 금리 · 장기 성장 기대",     dir:"down_bullish", scale: v=>v},
@@ -444,7 +445,7 @@ async function loadAll() {
 
   dot.className=failed>0?"dot error":"dot live";
   stxt.style.color=failed>0?"var(--risk)":"#2ee8a0";
-  stxt.textContent=failed>0?`LIVE · ${loaded}/13 로드 · ${failed}개 실패`:"LIVE · 13/13 전체 로드 완료";
+  stxt.textContent=failed>0?`LIVE · ${loaded}/14 로드 · ${failed}개 실패`:"LIVE · 14/14 전체 로드 완료";
 
   if(failed>0) {
     setPg(INDS.length,INDS.length,`⚠️ 실패: ${errors.join(" | ")}`);
