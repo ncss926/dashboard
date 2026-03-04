@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>미국 금융 유동성 대시보드</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:#03080f;--bg2:#071020;--bg3:#0d1d35;--border:#0f2744;
+    --text:#e2eaf4;--muted:#4a6580;--dim:#1a3050;
+    --fed:#00c8f0;--rates:#9d7cff;--fx:#2ee8a0;
+    --liquidity:#f5c040;--risk:#ff5f6d;--sentiment:#ff8c42;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Noto Sans KR',sans-serif;min-height:100vh}
+  .mono{font-family:'IBM Plex Mono',monospace}
+
+  header{
+    position:sticky;top:0;z-index:100;
+    background:linear-gradient(180deg,#071020f2,#03080ff2);
+    backdrop-filter:blur(20px);
+    border-bottom:1px solid var(--border);
+    padding:14px 20px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+  }
+  .status-row{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:pulse 2s infinite}
+  .dot.live{background:#2ee8a0;box-shadow:0 0 10px #2ee8a0}
+  .dot.loading{background:var(--liquidity);box-shadow:0 0 10px var(--liquidity)}
+  .dot.error{background:var(--risk);box-shadow:0 0 10px var(--risk)}
+  #statusText{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;font-family:'IBM Plex Mono',monospace}
+  h1{font-size:clamp(14px,3.5vw,21px);font-weight:700;letter-spacing:-0.3px}
+  .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  #updateText{font-size:10px;color:var(--muted);text-align:right;line-height:1.6;display:none}
+  .btn-refresh{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:#7a9abd;font-size:11px;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all 0.2s;white-space:nowrap}
+  .btn-refresh:hover{border-color:var(--fed);color:var(--fed)}
+  .btn-refresh:disabled{opacity:0.4;cursor:not-allowed}
+
+  main{padding:18px 14px 60px;max-width:1400px;margin:0 auto}
+
+  .progress-wrap{margin-bottom:12px}
+  .progress-bar{height:2px;background:var(--bg3);border-radius:2px;overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--fed),var(--rates),var(--fx));border-radius:2px;transition:width 0.3s ease;width:0%}
+  .progress-label{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:5px;min-height:14px}
+
+  .load-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+  .chip{font-size:9px;font-family:'IBM Plex Mono',monospace;padding:3px 8px;border-radius:10px;border:1px solid var(--border);color:var(--muted);background:var(--bg2);transition:all 0.4s}
+  .chip.ok{color:#2ee8a0;border-color:#2ee8a040;background:#2ee8a012}
+  .chip.fail{color:var(--risk);border-color:#ff5f6d40;background:#ff5f6d10}
+  .chip.loading{color:var(--liquidity);border-color:#f5c04040;animation:shimmer 1.5s infinite}
+
+  .score-card{background:linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid var(--border);border-radius:18px;padding:18px 20px;margin-bottom:16px;position:relative;overflow:hidden;display:flex;align-items:center;gap:18px}
+  .score-glow{position:absolute;inset:0;pointer-events:none;transition:background 1s}
+  .score-num{font-size:50px;font-weight:800;line-height:1;font-family:'IBM Plex Mono',monospace;min-width:72px;text-align:center;transition:color 1s}
+  .score-lbl{font-size:11px;color:var(--muted);margin-top:4px;text-align:center}
+  .score-info{flex:1}
+  .score-title{font-size:clamp(13px,2.5vw,17px);font-weight:700;margin-bottom:4px}
+  .score-sub{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px}
+  .sbar-track{height:5px;background:var(--bg);border-radius:3px;overflow:hidden}
+  .sbar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--risk),var(--liquidity),#2ee8a0);transition:width 1.5s ease}
+  .sbar-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-top:3px}
+
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .fbtn{padding:5px 12px;border-radius:20px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all 0.2s;font-family:'Noto Sans KR',sans-serif}
+
+  .grid{display:grid;gap:10px;grid-template-columns:1fr}
+
+  .card{background:linear-gradient(135deg,var(--bg2) 0%,var(--bg3) 100%);border:1px solid transparent;border-radius:14px;padding:14px 15px;position:relative;overflow:hidden;opacity:0;transform:translateY(12px);transition:opacity 0.45s ease,transform 0.45s ease}
+  .card.visible{opacity:1;transform:translateY(0)}
+  .topline{position:absolute;top:0;left:0;right:0;height:2px}
+  .badge{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:2px 8px;margin-bottom:9px;font-size:9px;letter-spacing:1px;text-transform:uppercase;font-family:'IBM Plex Mono',monospace}
+  .bdot{width:4px;height:4px;border-radius:50%;flex-shrink:0}
+  .cbody{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .cname{font-size:12px;color:#7a9abd;margin-bottom:1px}
+  .csub{font-size:10px;color:var(--muted);margin-bottom:7px}
+  .vrow{display:flex;align-items:baseline;gap:4px}
+  .cval{font-size:23px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-1px;color:var(--text)}
+  .cunit{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+  .fglbl{font-size:11px;margin-top:3px}
+  .cright{text-align:right;flex-shrink:0}
+  .cchg{font-size:12px;font-weight:600;font-family:'IBM Plex Mono',monospace}
+  .cchlbl{font-size:9px;color:var(--muted);margin-top:2px}
+  .csig{margin-top:6px;padding:3px 7px;border-radius:5px;font-size:9px;font-family:'IBM Plex Mono',monospace;display:inline-block}
+  .cbar{height:3px;background:var(--bg);border-radius:2px;overflow:hidden;margin-top:8px}
+  .cbarfill{height:100%;border-radius:2px;transition:width 1s ease}
+  .cdesc{font-size:10px;color:var(--dim);margin-top:6px;line-height:1.4}
+  .cdate{font-size:9px;color:#0e2035;margin-top:4px;text-align:right;font-family:'IBM Plex Mono',monospace}
+  .cna{font-size:10px;color:var(--risk);margin-top:6px}
+
+  .footer{margin-top:28px;padding:14px 18px;background:var(--bg2);border-radius:12px;border:1px solid var(--border);font-size:11px;color:var(--dim);line-height:1.8}
+
+  @media(min-width:600px){main{padding:22px 22px 60px}.grid{grid-template-columns:repeat(2,1fr)}#updateText{display:block}}
+  @media(min-width:900px){main{padding:26px 30px 60px}.grid{grid-template-columns:repeat(3,1fr)}header{padding:16px 30px}}
+  @media(min-width:1200px){.grid{grid-template-columns:repeat(4,1fr)}}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes shimmer{0%{opacity:.3}50%{opacity:.6}100%{opacity:.3}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="status-row">
+      <div class="dot loading" id="dot"></div>
+      <span id="statusText" style="color:var(--liquidity)">초기화 중...</span>
+    </div>
+    <h1>미국 금융 유동성 대시보드</h1>
+  </div>
+  <div class="header-right">
+    <div id="updateText" class="mono"></div>
+    <button class="btn-refresh" id="btnRefresh" onclick="loadAll()" disabled>↻ 새로고침</button>
+  </div>
+</header>
+
+<main>
+  <div class="progress-wrap">
+    <div class="progress-bar"><div class="progress-fill" id="pgFill"></div></div>
+    <div class="progress-label" id="pgLabel"></div>
+  </div>
+  <div class="load-chips" id="chips"></div>
+
+  <div id="scoreCard" class="score-card" style="display:none">
+    <div class="score-glow" id="scoreGlow"></div>
+    <div>
+      <div class="score-num mono" id="scoreNum">—</div>
+      <div class="score-lbl">종합 점수</div>
+    </div>
+    <div class="score-info">
+      <div class="score-title">유동성 환경: <span id="scoreLabel" style="transition:color 1s">—</span></div>
+      <div class="score-sub">13개 지표 실시간 분석 · FRED API + Yahoo Finance + CNN</div>
+      <div class="sbar-track"><div class="sbar-fill" id="sbarFill" style="width:50%"></div></div>
+      <div class="sbar-labels"><span>긴축</span><span>중립</span><span>완화</span></div>
+    </div>
+  </div>
+
+  <div class="filters" id="filters"></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="footer">
+    📡 데이터: FRED API · Yahoo Finance (DXY·VIX) · CNN Fear &amp; Greed<br/>
+    ⚠️ 본 대시보드는 정보 제공 목적이며 투자 조언이 아닙니다.
+  </div>
+</main>
+
+<script>
+const FRED_KEY = "5c11004cf34abfbb031088e5448ef025";
+
+const INDS = [
+  // FRED 단위 정리:
+  // RRPONTSYD → Billions USD  → 그대로 표시 (십억$)
+  // WRESBAL   → Millions USD  → /1000 → 십억$
+  // WTREGEN   → Millions USD  → /1000 → 십억$
+  // SOFR      → % 그대로
+  // T10Y2Y / DGS2 / DGS10 → % 그대로
+  // WRMFNS    → Millions USD  → /1000000 → 조$
+  // M2SL      → Billions USD  → /1000 → 조$
+  // BAMLH0A0HYM2 → % 그대로
+  {id:"rrp",    label:"RRP 잔고",      sub:"Reverse Repo",       unit:"십억$", src:"fred", series:"RRPONTSYD",    lim:5,  cat:"fed",       desc:"연준 역레포 잔고 · 유동성 흡수",        dir:"down_bullish", scale: v=>v},
+  {id:"reserves",label:"은행 준비금",  sub:"Bank Reserves",      unit:"십억$", src:"fred", series:"WRESBAL",      lim:5,  cat:"fed",       desc:"은행 시스템 준비금 총액",               dir:"up_bullish",   scale: v=>v/1000},
+  {id:"tga",    label:"TGA 잔고",      sub:"Treasury Gen. Acct", unit:"십억$", src:"fred", series:"WTREGEN",      lim:5,  cat:"fed",       desc:"재무부 일반계정 · 감소 시 유동성 증가", dir:"down_bullish", scale: v=>v/1000},
+  {id:"sofr",   label:"SOFR",         sub:"Secured Overnight",  unit:"%",    src:"fred", series:"SOFR",         lim:10, cat:"rates",     desc:"담보부 익일물 금리 · 단기자금 비용",    dir:"down_bullish", scale: v=>v},
+  {id:"dxy",    label:"DXY",          sub:"Dollar Index (ICE)", unit:"",     src:"yahoo",ticker:"DX-Y.NYB",               cat:"fx",        desc:"달러 인덱스 · 글로벌 달러 강도",        dir:"down_bullish", scale: v=>v},
+  {id:"spread", label:"장단기 금리차", sub:"10Y − 2Y Spread",    unit:"%",    src:"fred", series:"T10Y2Y",       lim:30, cat:"rates",     desc:"수익률 곡선 기울기 · 경기 선행 지표",   dir:"up_bullish",   scale: v=>v},
+  {id:"us2y",   label:"미국채 2년물",  sub:"2Y Treasury",        unit:"%",    src:"fred", series:"DGS2",         lim:30, cat:"rates",     desc:"2년물 국채 금리 · 단기 통화정책 기대",  dir:"down_bullish", scale: v=>v},
+  {id:"us10y",  label:"미국채 10년물", sub:"10Y Treasury",       unit:"%",    src:"fred", series:"DGS10",        lim:30, cat:"rates",     desc:"10년물 국채 금리 · 장기 성장 기대",     dir:"down_bullish", scale: v=>v},
+  {id:"mmf",    label:"MMF 자산",     sub:"Money Market Funds", unit:"십억$", src:"fred", series:"WRMFNS",       lim:5,  cat:"liquidity", desc:"머니마켓펀드 총 자산",                  dir:"down_bullish", scale: v=>v/1000},
+  {id:"m2",     label:"M2 통화량",    sub:"M2 Money Supply",    unit:"십억$", src:"fred", series:"M2SL",         lim:5,  cat:"liquidity", desc:"광의 통화량 · 전반적 유동성 수준",       dir:"up_bullish",   scale: v=>v},
+  {id:"hy",     label:"HY Spread",   sub:"High Yield Spread",  unit:"%",    src:"fred", series:"BAMLH0A0HYM2", lim:10, cat:"risk",      desc:"고수익 채권 스프레드 · 신용 위험",       dir:"down_bullish", scale: v=>v},
+  {id:"vix",    label:"VIX",         sub:"Fear Index",         unit:"",     src:"yahoo",ticker:"^VIX",                   cat:"risk",      desc:"시장 변동성 지수 · 공포 측정",           dir:"down_bullish", scale: v=>v},
+  {id:"fg",     label:"Fear & Greed", sub:"CNN Index",         unit:"/100", src:"cnn",                                   cat:"sentiment", desc:"시장 심리 · 공포(0) ~ 탐욕(100)",       dir:"up_bullish",   scale: v=>v},
+];
+
+const CAT = {all:"전체",fed:"연준 유동성",rates:"금리",fx:"환율",liquidity:"광의 유동성",risk:"위험 지표",sentiment:"시장 심리"};
+const COL = {fed:"#00c8f0",rates:"#9d7cff",fx:"#2ee8a0",liquidity:"#f5c040",risk:"#ff5f6d",sentiment:"#ff8c42"};
+
+let DATA = {}, activeFilter = "all";
+
+// ── 다중 프록시 폴백 ──
+const PROXIES = [
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+async function proxyFetch(targetUrl, timeout=14000) {
+  for (let i = 0; i < PROXIES.length; i++) {
+    try {
+      const proxyUrl = PROXIES[i](targetUrl);
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), timeout);
+      const r = await fetch(proxyUrl, {signal: ctrl.signal});
+      clearTimeout(tid);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text = await r.text();
+      // allorigins wraps in {contents:"..."}
+      try {
+        const j = JSON.parse(text);
+        if (j.contents !== undefined) return j.contents;
+        return text;
+      } catch {
+        return text;
+      }
+    } catch(e) {
+      if (i === PROXIES.length - 1) throw e;
+      // try next proxy
+    }
+  }
+}
+
+async function fetchFRED(series, lim) {
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=${lim}`;
+  const text = await proxyFetch(url);
+  const data = JSON.parse(text);
+  if (data.error_message) throw new Error(data.error_message);
+  const obs = (data.observations||[]).filter(o => o.value !== "." && o.value.trim() !== "" && isFinite(parseFloat(o.value)));
+  if (obs.length < 2) throw new Error(`유효값 ${obs.length}개 (limit 부족)`);
+  const cur = parseFloat(obs[0].value);
+  const prv = parseFloat(obs[1].value);
+  return {raw: cur, prev: prv, change: ((cur-prv)/Math.abs(prv)*100), date: obs[0].date};
+}
+
+async function fetchYahoo(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=10d`;
+  const text = await proxyFetch(url);
+  const p = JSON.parse(text);
+  const res = p.chart.result[0];
+  const cl = res.indicators.quote[0].close.filter(v=>v!=null&&isFinite(v));
+  if (cl.length < 2) throw new Error("종가 데이터 부족");
+  const cur = cl[cl.length-1], prv = cl[cl.length-2];
+  const ts = res.timestamp;
+  const date = new Date(ts[ts.length-1]*1000).toISOString().split("T")[0];
+  return {raw: cur, prev: prv, change: ((cur-prv)/Math.abs(prv)*100), date};
+}
+
+async function fetchCNN() {
+  // Try main endpoint
+  const endpoints = [
+    "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+    "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/1month",
+  ];
+  for (const ep of endpoints) {
+    try {
+      const text = await proxyFetch(ep, 12000);
+      const p = JSON.parse(text);
+      let score, prev;
+      if (p.fear_and_greed) {
+        score = Math.round(p.fear_and_greed.score);
+        const hist = p.fear_and_greed_historical?.data;
+        prev = hist && hist.length>=2 ? Math.round(hist[hist.length-2].y) : score;
+      } else if (Array.isArray(p.data)) {
+        const pts = p.data.filter(x=>x.y!=null);
+        score = Math.round(pts[pts.length-1].y);
+        prev  = Math.round(pts[pts.length-2].y);
+      } else if (p.data?.data) {
+        const pts = p.data.data.filter(x=>x.y!=null);
+        score = Math.round(pts[pts.length-1].y);
+        prev  = Math.round(pts[pts.length-2].y);
+      } else throw new Error("알 수 없는 응답 형식");
+      return {raw: score, prev, change: prev?((score-prev)/Math.abs(prev)*100):0, date: new Date().toISOString().split("T")[0]};
+    } catch {}
+  }
+  throw new Error("CNN F&G 엔드포인트 모두 실패");
+}
+
+function fmt(ind, raw) {
+  if (raw==null) return "—";
+  const v = ind.scale(raw);
+  if (ind.id === "fg") return String(Math.round(v));
+  if (["rrp","reserves","tga"].includes(ind.id)) return v.toFixed(2);
+  if (["mmf","m2"].includes(ind.id)) return v.toFixed(2);
+  return v.toFixed(2);
+}
+
+function fgLbl(v) {
+  if (v<=20) return {t:"극도의 공포",c:"#ff5f6d"};
+  if (v<=40) return {t:"공포",c:"#ff8c42"};
+  if (v<=60) return {t:"중립",c:"#f5c040"};
+  if (v<=80) return {t:"탐욕",c:"#8be066"};
+  return {t:"극도의 탐욕",c:"#2ee8a0"};
+}
+
+function sentiment(id, chg) {
+  const ind = INDS.find(i=>i.id===id);
+  if (!ind||Math.abs(chg)<0.3) return "neutral";
+  return (ind.dir==="up_bullish"?chg>0:chg<0)?"bullish":"bearish";
+}
+
+function setChip(id, state) {
+  const el=document.getElementById("chip_"+id);
+  if(el) el.className="chip "+state;
+}
+
+function buildChips() {
+  document.getElementById("chips").innerHTML =
+    INDS.map(i=>`<span class="chip loading" id="chip_${i.id}">${i.label}</span>`).join("");
+}
+
+function setPg(done, total, label) {
+  document.getElementById("pgFill").style.width = (done/total*100)+"%";
+  document.getElementById("pgLabel").textContent = label||"";
+}
+
+function buildFilters() {
+  const el=document.getElementById("filters");
+  el.innerHTML="";
+  Object.keys(CAT).forEach(cat=>{
+    const btn=document.createElement("button");
+    btn.className="fbtn"+(cat===activeFilter?" active":"");
+    btn.textContent=CAT[cat];
+    const c=cat==="all"?"#00c8f0":COL[cat];
+    if(cat===activeFilter){btn.style.borderColor=c;btn.style.background=c+"20";btn.style.color=c}
+    btn.onclick=()=>{activeFilter=cat;buildFilters();renderCards()};
+    el.appendChild(btn);
+  });
+}
+
+function renderCards() {
+  const list = activeFilter==="all"?INDS:INDS.filter(i=>i.cat===activeFilter);
+  const grid = document.getElementById("grid");
+  grid.innerHTML="";
+  list.forEach((ind,idx)=>{
+    const d=DATA[ind.id];
+    const col=COL[ind.cat];
+    const card=document.createElement("div");
+    card.className="card";
+    card.style.borderColor=col+"44";
+    card.style.transitionDelay=(idx*40)+"ms";
+
+    if(!d){
+      card.innerHTML=`
+        <div class="topline" style="background:linear-gradient(90deg,transparent,${col},transparent)"></div>
+        <div class="badge" style="background:${col}15;border:1px solid ${col}33;color:${col}">
+          <div class="bdot" style="background:${col}"></div>${CAT[ind.cat]?.toUpperCase()}
+        </div>
+        <div class="cname">${ind.label}</div>
+        <div class="csub">${ind.sub}</div>
+        <div style="margin-top:10px;font-size:22px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">— —</div>
+        <div class="cna">⚠️ 데이터 로드 실패</div>
+        <div class="cdesc" style="margin-top:7px">${ind.desc}</div>`;
+    } else {
+      const scaled = ind.scale(d.raw);
+      const scaledPrev = ind.scale(d.prev);
+      const chgScaled = ((scaled-scaledPrev)/Math.abs(scaledPrev)*100);
+      const sent = sentiment(ind.id, d.change);
+      const sc = sent==="bullish"?"#2ee8a0":sent==="bearish"?"#ff5f6d":"#4a6580";
+      const up = d.change>=0;
+      const sigLbl = sent==="bullish"?"위험 완화":sent==="bearish"?"위험 증가":"중립";
+      const barW = Math.min(Math.abs(d.change)*5,100);
+      const fgi = ind.id==="fg"?fgLbl(d.raw):null;
+      card.innerHTML=`
+        <div class="topline" style="background:linear-gradient(90deg,transparent,${col},transparent)"></div>
+        <div class="badge" style="background:${col}15;border:1px solid ${col}33;color:${col}">
+          <div class="bdot" style="background:${col}"></div>${CAT[ind.cat]?.toUpperCase()}
+        </div>
+        <div class="cbody">
+          <div>
+            <div class="cname">${ind.label}</div>
+            <div class="csub">${ind.sub}</div>
+            <div class="vrow">
+              <span class="cval">${fmt(ind,d.raw)}</span>
+              <span class="cunit">${ind.unit}</span>
+            </div>
+            ${fgi?`<div class="fglbl" style="color:${fgi.c}">${fgi.t}</div>`:""}
+          </div>
+          <div class="cright">
+            <div class="cchg" style="color:${up?"#2ee8a0":"#ff5f6d"}">${up?"▲":"▼"} ${Math.abs(d.change).toFixed(2)}%</div>
+            <div class="cchlbl">전일 대비</div>
+            <div class="csig" style="background:${sc}15;border:1px solid ${sc}44;color:${sc}">${sigLbl}</div>
+          </div>
+        </div>
+        <div class="cbar"><div class="cbarfill" style="width:${barW}%;background:${sc}"></div></div>
+        <div class="cdesc">${ind.desc}</div>
+        <div class="cdate mono">${d.date}</div>`;
+    }
+    grid.appendChild(card);
+    requestAnimationFrame(()=>setTimeout(()=>card.classList.add("visible"),idx*40));
+  });
+}
+
+function updateScore() {
+  const scores = INDS.map(ind=>{
+    const d=DATA[ind.id]; if(!d) return 50;
+    const s=sentiment(ind.id,d.change);
+    return s==="bullish"?70:s==="bearish"?30:50;
+  });
+  const avg=scores.reduce((a,b)=>a+b,0)/scores.length;
+  const lbl=avg>=65?"위험 완화":avg>=55?"다소 완화":avg>=45?"중립":avg>=35?"다소 긴축":"긴축 심화";
+  const c=avg>=60?"#2ee8a0":avg>=45?"#f5c040":"#ff5f6d";
+  document.getElementById("scoreNum").textContent=avg.toFixed(0);
+  document.getElementById("scoreNum").style.color=c;
+  document.getElementById("scoreLabel").textContent=lbl;
+  document.getElementById("scoreLabel").style.color=c;
+  document.getElementById("sbarFill").style.width=avg+"%";
+  document.getElementById("scoreGlow").style.background=`radial-gradient(ellipse at 15% 50%,${c}18,transparent 60%)`;
+  document.getElementById("scoreCard").style.display="flex";
+}
+
+async function loadAll() {
+  const btn=document.getElementById("btnRefresh");
+  const dot=document.getElementById("dot");
+  const stxt=document.getElementById("statusText");
+
+  btn.disabled=true;
+  dot.className="dot loading";
+  stxt.style.color="var(--liquidity)";
+  stxt.textContent="데이터 로딩 중...";
+  document.getElementById("scoreCard").style.display="none";
+  document.getElementById("grid").innerHTML="";
+  DATA={};
+
+  buildChips();
+  buildFilters();
+  setPg(0,INDS.length,"연결 중...");
+
+  const errors=[];
+  let done=0;
+
+  const tasks = INDS.map(ind => async () => {
+    try {
+      let res;
+      if (ind.src==="fred")  res = await fetchFRED(ind.series, ind.lim);
+      else if(ind.src==="yahoo") res = await fetchYahoo(ind.ticker);
+      else                   res = await fetchCNN();
+      DATA[ind.id]=res;
+      setChip(ind.id,"ok");
+    } catch(e) {
+      DATA[ind.id]=null;
+      setChip(ind.id,"fail");
+      errors.push(`${ind.label}: ${e.message}`);
+      console.warn(`[${ind.id}]`,e.message);
+    }
+    done++;
+    setPg(done,INDS.length,`${done}/${INDS.length} 로드 완료`);
+    renderCards();
+    updateScore();
+  });
+
+  await Promise.all(tasks.map(t=>t()));
+
+  const loaded=Object.values(DATA).filter(Boolean).length;
+  const failed=INDS.length-loaded;
+
+  dot.className=failed>0?"dot error":"dot live";
+  stxt.style.color=failed>0?"var(--risk)":"#2ee8a0";
+  stxt.textContent=failed>0?`LIVE · ${loaded}/13 로드 · ${failed}개 실패`:"LIVE · 13/13 전체 로드 완료";
+
+  if(failed>0) {
+    setPg(INDS.length,INDS.length,`⚠️ 실패: ${errors.join(" | ")}`);
+    document.getElementById("pgLabel").style.color="var(--risk)";
+  } else {
+    document.getElementById("pgLabel").textContent="✓ 모든 지표 로드 완료";
+    document.getElementById("pgLabel").style.color="#2ee8a040";
+    setTimeout(()=>{document.getElementById("pgLabel").textContent=""},3000);
+  }
+
+  const now=new Date().toLocaleString("ko-KR",{timeZone:"Asia/Seoul"});
+  const ut=document.getElementById("updateText");
+  ut.innerHTML=`업데이트: ${now} KST`;
+  ut.style.display="block";
+
+  btn.disabled=false;
+}
+
+buildFilters();
+loadAll();
+</script>
+</body>
+</html>
